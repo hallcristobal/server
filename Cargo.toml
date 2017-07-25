@@ -1,0 +1,7 @@
+[package]
+name = "livesplit-server"
+version = "0.1.0"
+authors = ["Cris Hall-Ramos <crishallramos@yahoo.com>"]
+
+[dependencies]
+parking_lot = "0.4.4"
