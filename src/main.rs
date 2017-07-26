@@ -1,5 +1,6 @@
 extern crate parking_lot;
 extern crate rand;
+extern crate schedule_recv;
 
 mod connection;
 mod server;
@@ -16,10 +17,13 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 use std::collections::HashMap;
 
-pub type ServerMap = Arc<RwLock<HashMap<usize, Server>>>;
+pub type ServerMap<T> = Arc<RwLock<HashMap<usize, T>>>;
 
+pub static mut TICK_RATE: u8 = 64;
+
+#[allow(unused_assignments)]
 fn main() {
-    let server_map: ServerMap = Arc::new(RwLock::new(HashMap::new()));
+    let server_map: ServerMap<Server> = Arc::new(RwLock::new(HashMap::new()));
     let mut rng = rand::thread_rng();
     let listener = TcpListener::bind("127.0.0.1:1337").expect("Unable to bind listener");
 
@@ -48,7 +52,8 @@ fn main() {
     }
 }
 
-fn handle_client(stream: TcpStream, key: usize, map: ServerMap) -> Result<()> {
+#[allow(unused_assignments)]
+fn handle_client(stream: TcpStream, key: usize, map: ServerMap<Server>) -> Result<()> {
     let peer_addr = stream.peer_addr()?;
     println!("Stream incomming at {}", peer_addr);
     let mut len = 0;
@@ -56,6 +61,7 @@ fn handle_client(stream: TcpStream, key: usize, map: ServerMap) -> Result<()> {
         len = map.read().len();
     }
     if len > 0 {
+        stream.set_nonblocking(true)?;
         let map = map.write();
         let mut ve = Vec::new();
         for (k, _) in map.iter() {

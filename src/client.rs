@@ -2,38 +2,35 @@ use parking_lot::RwLock;
 
 use connection::Connection;
 use connection::NetConnection;
+use super::ServerMap;
 
 use std::io::Result;
 use std::sync::Arc;
+use std::sync::mpsc::sync_channel;
+use std::sync::mpsc::{SyncSender, Receiver};
 use std::thread;
+use std::error::Error;
 
 pub struct Client {
     conn: Arc<RwLock<NetConnection>>,
-	index: Arc<usize>
+    tx: SyncSender<bool>,
 }
 
 impl Client {
-    pub fn new(conn: NetConnection, index: usize, list: Arc<RwLock<Vec<Client>>>) -> Self {
+    pub fn new(conn: NetConnection, index: usize, list: ServerMap<Client>) -> Self {
         let conn = Arc::new(RwLock::new(conn));
         let i = conn.clone();
-		let index = Arc::new(index);
-		let i_i = index.clone();
+
+        let (tx, rx) = sync_channel(1);
+
         thread::spawn(move || {
-            loop {
-                let i = i.read();
-                let response = i.recv();
-                match response {
-                    Ok(_) => {}
-                    Err(_) => break,
-                }
-            }
-            println!("Removing Client: {}", &index);
+            run(rx, i);
+            println!("Removing Client: {}", index);
             let mut list = list.write();
-            list.remove(&i_i);
+            list.remove(&index);
         });
-        Client { 
-			conn: conn,
-		 }
+
+        Client { conn: conn, tx: tx }
     }
 
     pub fn send(&self, m: &str) -> Result<()> {
@@ -41,8 +38,27 @@ impl Client {
         conn.send(m)?;
         Ok(())
     }
+    pub fn notify_kill(&self) {
+        let _ = self.tx.send(true).map_err(|_| {
+            println!("Couldn't send message to thread")
+        });
+    }
+}
 
-	pub fn set_index(&mut self, index: usize) {
+fn run(rx: Receiver<bool>, i: Arc<RwLock<NetConnection>>) {
+    loop {
+        if let Ok(v) = rx.try_recv() {
+            println!("CLIENT RECIEVED STOP");
+            if v {
+                return;
+            }
+        }
 
-	}
+        let response = i.read().recv();
+        match response {
+            Ok(_) => {}
+            Err(ref err) if err.description() == "operation would block" => {}
+            Err(_) => return,
+        }
+    }
 }

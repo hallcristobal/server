@@ -2,6 +2,7 @@ use std::io::{BufReader, BufWriter, Result, Error, ErrorKind};
 use std::io::prelude::*;
 use std::net::{TcpStream, SocketAddr};
 use std::sync::Mutex;
+use std::error::Error as ErrorTrait;
 
 pub trait Connection {
     fn send(&self, msg: &str) -> Result<()>;
@@ -72,11 +73,15 @@ impl Connection for NetConnection {
 
     fn recv(&self) -> Result<String> {
         let mut ret = String::new();
-        self.reader.lock().unwrap().read_line(&mut ret)?;
-        if ret.is_empty() {
-            Err(Error::new(ErrorKind::Other, "EOF"))
-        } else {
-            Ok(ret)
+        match self.reader.lock().unwrap().read_line(&mut ret) {
+            Ok(_) => {
+                if ret.is_empty() {
+                    Err(Error::new(ErrorKind::Other, "EOF"))
+                } else {
+                    Ok(ret)
+                }
+            }
+            Err(err) => Err(Error::new(ErrorKind::Other, err.description())),
         }
     }
 
