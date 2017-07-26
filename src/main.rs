@@ -1,24 +1,45 @@
 extern crate parking_lot;
+extern crate rand;
+
 mod connection;
 mod server;
+mod client;
+mod server_inner;
+
 
 use parking_lot::RwLock;
 use server::Server;
+use rand::Rng;
 
 use std::io::Result;
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
+use std::collections::HashMap;
 
-pub type ServerList = RwLock<Vec<Server>>;
+pub type ServerMap = Arc<RwLock<HashMap<usize, Server>>>;
 
 fn main() {
-    let mut servers = Arc::new(RwLock::new(Vec::new()));
+    let server_map: ServerMap = Arc::new(RwLock::new(HashMap::new()));
+    let mut rng = rand::thread_rng();
     let listener = TcpListener::bind("127.0.0.1:1337").expect("Unable to bind listener");
+
     println!("Listening on {}", listener.local_addr().unwrap());
     for stream in listener.incoming() {
         // main listening loop
         if let Ok(stream) = stream {
-            let _ = handle_client(stream, &mut servers).map_err(|e| {
+            let mut key = 0;
+            {
+                // scope so read lock drops after getting a usable key
+                let map = server_map.read();
+                loop {
+                    key = rng.gen_range::<usize>(100000, 999999); // generate a 6 didget key
+                    if !map.contains_key(&key) {
+                        break;
+                    }
+                }
+            }
+            println!("Key: {}", key);
+            let _ = handle_client(stream, key, server_map.clone()).map_err(|e| {
                 println!("Error when making server {}", e);
             });
         } else {
@@ -27,10 +48,32 @@ fn main() {
     }
 }
 
-fn handle_client(stream: TcpStream, servers: &mut Arc<ServerList>) -> Result<()> {
-    println!("Client incomming at {}", stream.peer_addr()?);
-    let server = Server::new(stream, servers.clone());
-    let _ = server.run()?;
-    // servers.get_mut().push(server); // bad?
-    Ok(())
+fn handle_client(stream: TcpStream, key: usize, map: ServerMap) -> Result<()> {
+    let peer_addr = stream.peer_addr()?;
+    println!("Stream incomming at {}", peer_addr);
+    let mut len = 0;
+    {
+        len = map.read().len();
+    }
+    if len > 0 {
+        let map = map.write();
+        let mut ve = Vec::new();
+        for (k, _) in map.iter() {
+            ve.push(k);
+        }
+        if let Some(server) = map.get(ve[0]) {
+            server.add_client(stream)?;
+            println!("Added stream \"{}\"as client to {}", peer_addr, ve[0]);
+        }
+        Ok(())
+    } else {
+        let server = Server::new(stream, map.clone(), key);
+        let _ = server.run()?;
+        let mut map = map.write();
+        if let Some(_) = map.insert(key, server) {
+            Ok(())
+        } else {
+            Ok(())
+        }
+    }
 }

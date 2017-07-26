@@ -5,3 +5,4 @@ authors = ["Cris Hall-Ramos <crishallramos@yahoo.com>"]
 
 [dependencies]
 parking_lot = "0.4.4"
+rand = "0.3.15"
